@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>模試結果グラフ作成 ver.1.2</title>
+<title>模試結果可視化ツール</title>
 <style>
     :root {
         --bg-color: #0b0f19;
@@ -13,6 +13,7 @@
         --grid-line: #334;
         --delete-color: #ea4335;
         --total-bar-color: #666;
+        --error-bar-color: #ffffff;
     }
 
     [data-theme="light"] {
@@ -23,12 +24,13 @@
         --grid-line: #ddd;
         --delete-color: #d93025;
         --total-bar-color: #999;
+        --error-bar-color: #000000;
     }
 
     body {
         background-color: var(--bg-color);
         color: var(--text-color);
-        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
         margin: 0;
         padding: 40px 20px;
         transition: background-color 0.3s, color 0.3s;
@@ -40,14 +42,22 @@
         position: relative;
     }
 
-    .theme-switch-wrapper {
+    /* --- スイッチ類 --- */
+    .controls-wrapper {
         position: absolute;
         top: -20px;
         right: 0;
         display: flex;
+        flex-direction: column;
+        align-items: flex-end;
+        gap: 15px;
+    }
+
+    .switch-item {
+        display: flex;
         align-items: center;
-        gap: 8px;
-        font-size: 0.8rem;
+        gap: 10px;
+        font-size: 0.85rem;
     }
 
     .theme-switch {
@@ -56,41 +66,20 @@
         position: relative;
         width: 44px;
     }
-
     .theme-switch input { display: none; }
-
     .slider {
         background-color: #ccc;
-        bottom: 0;
-        cursor: pointer;
-        left: 0;
-        position: absolute;
-        right: 0;
-        top: 0;
-        transition: .4s;
-        border-radius: 34px;
+        bottom: 0; cursor: pointer; left: 0; position: absolute; right: 0; top: 0;
+        transition: .4s; border-radius: 34px;
     }
-
     .slider:before {
-        background-color: white;
-        bottom: 4px;
-        content: "";
-        height: 16px;
-        left: 4px;
-        position: absolute;
-        transition: .4s;
-        width: 16px;
-        border-radius: 50%;
+        background-color: white; bottom: 4px; content: ""; height: 16px; left: 4px;
+        position: absolute; transition: .4s; width: 16px; border-radius: 50%;
     }
-
     input:checked + .slider { background-color: #2196F3; }
     input:checked + .slider:before { transform: translateX(20px); }
 
     /* --- 設定ページ --- */
-    .settings-section {
-        margin-bottom: 60px;
-    }
-
     .title-input {
         background: transparent;
         border: none;
@@ -118,7 +107,7 @@
         flex-wrap: wrap;
     }
 
-    .row-number { width: 20px; color: #888; font-size: 0.9rem; }
+    .row-number { width: 20px; color: #888; }
 
     .input-field {
         background: transparent;
@@ -130,7 +119,14 @@
     }
     
     .input-field.name { width: 120px; }
-    .input-field.score, .input-field.max { width: 60px; }
+    .input-field.score { width: 60px; }
+    .input-field.max { width: 60px; }
+    
+    /* 予想モード入力欄（幅を約半分に） */
+    .input-field.score-min, 
+    .input-field.score-med, 
+    .input-field.score-max { width: 45px; }
+
     .input-field.color { width: 35px; height: 35px; padding: 0; border: none; background: transparent; cursor: pointer; }
 
     .btn {
@@ -139,33 +135,34 @@
         border: 1px solid var(--input-border);
         padding: 8px 16px;
         cursor: pointer;
-        font-size: 0.9rem;
         border-radius: 4px;
     }
-
-    .btn:hover { background: var(--btn-hover); }
-    .btn-add { color: #8ab4f8; border-color: transparent; }
+    .btn-add { color: #8ab4f8; border-color: transparent; font-weight: bold; }
     .btn-delete { color: var(--delete-color); border: none; font-size: 0.75rem; }
 
     .create-btn-container { text-align: center; margin-top: 40px; }
 
-    /* --- 表示（グラフ画面） --- */
+    /* モード切替表示制御 */
+    .prediction-only { display: none; }
+    body.prediction-mode .prediction-only { display: inline-block; }
+    body.prediction-mode .normal-only { display: none; }
+
+    /* --- グラフ表示エリア --- */
     .display-section {
-        margin-top: 50px;
-        padding-top: 50px;
-        border-top: 1px solid var(--grid-line);
-        padding-bottom: 400px; 
+        margin-top: 60px;
+        padding-top: 40px;
+        padding-bottom: 500px; /* スクショ用余白 */
     }
 
-    .graph-title {
-        text-align: center;
-        margin-bottom: 50px;
-        font-size: 1.5rem;
+    .graph-title { text-align: center; margin-bottom: 50px; font-size: 1.5rem; }
+
+    .graph-wrapper {
+        position: relative;
+        margin-left: 180px; /* ラベルエリア確保 */
     }
 
     .graph-container {
         position: relative;
-        margin-left: 200px; 
         border-left: 1px solid var(--grid-line);
     }
 
@@ -173,7 +170,6 @@
         position: absolute; top: 0; right: 0; bottom: 0; left: 0;
         display: flex; justify-content: space-between; z-index: 0;
     }
-
     .grid-line { width: 1px; height: 100%; background-color: var(--grid-line); position: relative; }
     .grid-label { position: absolute; bottom: -25px; left: 50%; transform: translateX(-50%); font-size: 0.8rem; color: #888; }
     .unit-label { position: absolute; bottom: -25px; right: -35px; font-size: 0.8rem; color: #888; }
@@ -187,18 +183,17 @@
         right: calc(100% + 10px);
         display: flex;
         align-items: center;
-        width: 190px;
+        width: 170px;
         justify-content: flex-end;
     }
 
     .label-color-bar { width: 5px; height: 22px; margin-right: 8px; }
-    .label-name { width: 75px; text-align: right; margin-right: 12px; font-size: 0.9rem; }
-    
+    .label-name { width: 70px; text-align: right; margin-right: 12px; font-size: 0.9rem; }
     .label-score-box { display: flex; align-items: baseline; justify-content: flex-end; width: 80px; }
     .label-score { font-size: 1.3rem; font-weight: bold; margin-right: 4px; }
     .label-max { font-size: 0.75rem; color: #888; }
 
-    .bar-area { flex-grow: 1; height: 100%; z-index: 1; }
+    .bar-area { flex-grow: 1; height: 100%; position: relative; z-index: 1; }
     .bar {
         height: 100%; display: flex; align-items: center; justify-content: flex-end;
         padding-right: 8px; box-sizing: border-box; color: #fff; font-size: 0.85rem;
@@ -206,124 +201,104 @@
         text-shadow: 0px 0px 3px rgba(0,0,0,0.5);
     }
 
-        /* 合計バーの中の文字色をモード（白/黒）に追従させる */
-    .total-row .bar {
-        color: var(--text-color) !important;
-        text-shadow: none; 
-        font-weight: bold;
-    }
-
-        /* 合計行の境界線を実線で強調 */
-    .total-row {
-        margin-top: 25px;
-        border-top: 2px solid var(--text-color) !important; /* 点線から実線へ */
-        padding-top: 15px;
-    }
-
-    /* 予想モードスイッチのスタイル */
-    .prediction-switch-wrapper {
-        position: absolute;
-        top: 15px; /* モード切替ボタンの下 */
-        right: 0;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 0.8rem;
-    }
-
-    /* エラーバー（最大・最小の線） */
+    /* エラーバー（垂直中央配置） */
     .error-bar {
         position: absolute;
         height: 2px;
-        background-color: var(--text-color);
+        background-color: var(--error-bar-color);
+        top: 50%;
+        transform: translateY(-50%);
         z-index: 2;
+        pointer-events: none;
     }
     .error-cap {
         position: absolute;
         width: 2px;
-        height: 12px;
+        height: 10px;
+        background-color: var(--error-bar-color);
+        top: -4px;
+    }
+
+    /* 合計行の全体横線 */
+    .total-divider {
+        position: absolute;
+        left: -180px; /* ラベルエリアの左端から */
+        right: 0;     /* グラフの右端まで */
+        height: 2px;
         background-color: var(--text-color);
-        top: -5px;
+        margin-top: 5px;
+        margin-bottom: 15px;
+        z-index: 3;
     }
 
-    /* 入力欄の表示制御 */
-    .prediction-only { display: none; }
-    body.prediction-mode .prediction-only { display: inline-block; }
-    body.prediction-mode .normal-only { display: none; }
-
-
-    /* グラフ全体の開始位置をさらに左へ（B列以降を左寄せ） */
-    .graph-container {
-        margin-left: 170px; /* 200pxからさらに短縮 */
-        border-left: 1px solid var(--grid-line);
+    .total-row {
+        margin-top: 30px; /* 横線のスペース確保 */
     }
-
-    .row-labels {
-        width: 160px; /* ラベルエリアも合わせて短縮 */
-        right: calc(100% + 8px);
+    .total-row .bar {
+        color: var(--text-color) !important;
+        text-shadow: none;
+        font-weight: bold;
     }
-    
 </style>
 </head>
 <body>
 
 <div class="container">
-    <div class="theme-switch-wrapper">
-        <span>Light Mode</span>
-        <label class="theme-switch" for="checkbox">
-            <input type="checkbox" id="checkbox" />
-            <div class="slider"></div>
-        </label>
+    <div class="controls-wrapper">
+        <div class="switch-item">
+            <span>ライトモード</span>
+            <label class="theme-switch">
+                <input type="checkbox" id="theme-checkbox" onchange="toggleTheme(this)">
+                <div class="slider"></div>
+            </label>
+        </div>
+        <div class="switch-item">
+            <span>予想モード</span>
+            <label class="theme-switch">
+                <input type="checkbox" id="prediction-checkbox" onchange="togglePrediction(this)">
+                <div class="slider"></div>
+            </label>
+        </div>
     </div>
 
-    <!-- 予想モード切替 -->
-    <div class="prediction-switch-wrapper">
-        <span>予想モード</span>
-        <label class="theme-switch">
-            <input type="checkbox" id="prediction-checkbox" onchange="togglePredictionMode(this)">
-            <div class="slider"></div>
-        </label>
-    </div>
-
-    
     <div class="settings-section" id="settings">
-        <input type="text" id="exam-title" class="title-input" placeholder="模試タイトルを入力">
+        <input type="text" id="exam-title" class="title-input" placeholder="[模試タイトル]">
         <div class="subject-list" id="subject-list"></div>
         <button class="btn btn-add" onclick="addRow()">+ 教科を追加</button>
         <div class="create-btn-container">
-            <button class="btn" style="padding: 12px 50px; font-weight: bold;" onclick="createGraph()">作成</button>
+            <button class="btn" style="padding: 12px 60px; font-weight: bold;" onclick="createGraph()">作成</button>
         </div>
     </div>
 
     <div class="display-section" id="display" style="display: none;">
         <h2 class="graph-title" id="display-title"></h2>
-        <div class="graph-container">
-            <div class="grid-background">
-                <div class="grid-line"><span class="grid-label">0</span></div>
-                <div class="grid-line"><span class="grid-label">20</span></div>
-                <div class="grid-line"><span class="grid-label">40</span></div>
-                <div class="grid-line"><span class="grid-label">60</span></div>
-                <div class="grid-line"><span class="grid-label">80</span></div>
-                <div class="grid-line"><span class="grid-label">100</span><span class="unit-label">(%)</span></div>
+        <div class="graph-wrapper">
+            <div class="graph-container">
+                <div class="grid-background">
+                    <div class="grid-line"><span class="grid-label">0</span></div>
+                    <div class="grid-line"><span class="grid-label">20</span></div>
+                    <div class="grid-line"><span class="grid-label">40</span></div>
+                    <div class="grid-line"><span class="grid-label">60</span></div>
+                    <div class="grid-line"><span class="grid-label">80</span></div>
+                    <div class="grid-line"><span class="grid-label">100</span><span class="unit-label">(%)</span></div>
+                </div>
+                <div id="graph-rows"></div>
             </div>
-            <div id="graph-rows"></div>
         </div>
     </div>
 </div>
 
 <script>
-    const toggleSwitch = document.querySelector('.theme-switch input[type="checkbox"]');
-    function switchTheme(e) {
-        if (e.target.checked) {
-            document.documentElement.setAttribute('data-theme', 'light');
-        } else {
-            document.documentElement.setAttribute('data-theme', 'dark');
-        }    
-    }
-    toggleSwitch.addEventListener('change', switchTheme, false);
-
     let rowIdCounter = 0;
     const defaultColors = ["#f28b82", "#fcb92c", "#8ab4f8", "#81c995", "#c58af9", "#9aa0a6"];
+
+    function toggleTheme(cb) {
+        document.documentElement.setAttribute('data-theme', cb.checked ? 'light' : 'dark');
+    }
+
+    function togglePrediction(cb) {
+        document.body.classList.toggle('prediction-mode', cb.checked);
+    }
 
     function addRow() {
         rowIdCounter++;
@@ -332,233 +307,108 @@
         row.className = 'input-row';
         row.id = `input-row-${rowIdCounter}`;
         const colorValue = defaultColors[(rowIdCounter - 1) % defaultColors.length];
+        
         row.innerHTML = `
             <span class="row-number">${rowIdCounter}</span>
             <input type="text" class="input-field name" placeholder="教科名">
-            <input type="number" class="input-field score" placeholder="点数">
+            <input type="number" class="input-field score normal-only" placeholder="点数">
+            <input type="number" class="input-field score-min prediction-only" placeholder="最小">
+            <input type="number" class="input-field score-med prediction-only" placeholder="中央">
+            <input type="number" class="input-field score-max prediction-only" placeholder="最大">
             <input type="number" class="input-field max" placeholder="満点" value="100">
             <input type="color" class="input-field color" value="${colorValue}">
             <button class="btn btn-delete" onclick="removeRow('${row.id}')">削除</button>
         `;
         list.appendChild(row);
-        updateRowNumbers();
     }
 
     function removeRow(id) {
         const row = document.getElementById(id);
-        if (row) { row.remove(); updateRowNumbers(); }
+        if (row) row.remove();
     }
 
-    function updateRowNumbers() {
-        const rows = document.querySelectorAll('.input-row');
-        rows.forEach((row, index) => {
-            row.querySelector('.row-number').textContent = index + 1;
-        });
-    }
-
-       function createGraph() {
-        const titleInput = document.getElementById('exam-title').value || "模試結果";
-        const displaySection = document.getElementById('display');
-        const displayTitle = document.getElementById('display-title');
-        const graphRowsContainer = document.getElementById('graph-rows');
-
-        graphRowsContainer.innerHTML = '';
-        displayTitle.textContent = titleInput;
-
-        const rows = document.querySelectorAll('.input-row');
-        let totalScore = 0;
-        let totalMax = 0;
-        let hasData = false;
-        
-        rows.forEach(row => {
-            const name = row.querySelector('.name').value.trim();
-            const scoreStr = row.querySelector('.score').value.trim();
-            const maxStr = row.querySelector('.max').value.trim();
-            const color = row.querySelector('.color').value;
-
-            // 点数が入力されている場合のみ集計・表示対象にする
-            if (scoreStr !== "") {
-                hasData = true;
-                const score = parseFloat(scoreStr) || 0;
-                const max = parseFloat(maxStr) || 100;
-                totalScore += score;
-                totalMax += max;
-                
-                let percentage = Math.min((score / max) * 100, 100);
-
-                const graphRow = document.createElement('div');
-                graphRow.className = 'graph-row';
-                graphRow.innerHTML = `
-                    <div class="row-labels">
-                        <div class="label-color-bar" style="background-color: ${color};"></div>
-                        <div class="label-name">${name || "無題"}</div>
-                        <div class="label-score-box">
-                            <span class="label-score">${score}</span>
-                            <span class="label-max">/${max}</span>
-                        </div>
-                    </div>
-                    <div class="bar-area">
-                        <div class="bar" style="width: 0%; background-color: ${color}; color: #fff;">
-                            ${Math.round(score)}
-                        </div>
-                    </div>
-                `;
-                graphRowsContainer.appendChild(graphRow);
-                setTimeout(() => {
-                    graphRow.querySelector('.bar').style.width = `${percentage}%`;
-                }, 100);
-            }
-        });
-
-        // 合計行の表示（データがある場合のみ）
-        if (hasData && totalMax > 0) {
-            let totalPercentage = Math.min((totalScore / totalMax) * 100, 100);
-            const totalRow = document.createElement('div');
-            totalRow.className = 'graph-row total-row';
-            totalRow.innerHTML = `
-                <div class="row-labels">
-                    <div class="label-color-bar" style="background-color: var(--total-bar-color);"></div>
-                    <div class="label-name" style="font-weight: bold;">合計</div>
-                    <div class="label-score-box">
-                        <span class="label-score">${totalScore}</span>
-                        <span class="label-max">/${totalMax}</span>
-                    </div>
-                </div>
-                <div class="bar-area">
-                    <div class="bar" style="width: 0%; background-color: var(--total-bar-color);">
-                        ${Math.round(totalScore)}
-                    </div>
-                </div>
-            `;
-            graphRowsContainer.appendChild(totalRow);
-            setTimeout(() => {
-                totalRow.querySelector('.bar').style.width = `${totalPercentage}%`;
-            }, 150);
-
-            displaySection.style.display = 'block';
-            window.scrollTo({ top: displaySection.offsetTop - 20, behavior: 'smooth' });
-        }
-    }
-
-        // 予想モードの切り替え
-    function togglePredictionMode(cb) {
-        if (cb.checked) {
-            document.body.classList.add('prediction-mode');
-        } else {
-            document.body.classList.remove('prediction-mode');
-        }
-    }
-
-    // addRow関数を修正：予想用の入力欄を含める
-    function addRow() {
-        rowIdCounter++;
-        const list = document.getElementById('subject-list');
-        const row = document.createElement('div');
-        row.className = 'input-row';
-        row.id = `input-row-${rowIdCounter}`;
-        const colorValue = defaultColors[(rowIdCounter - 1) % defaultColors.length];
-        
-        row.innerHTML = `
-            <span class="row-number">${rowIdCounter}</span>
-            <input type="text" class="input-field name" placeholder="教科名">
-            <!-- 通常時 -->
-            <input type="number" class="input-field score normal-only" placeholder="点数">
-            <!-- 予想時 -->
-            <input type="number" class="input-field score-min prediction-only" placeholder="最小">
-            <input type="number" class="input-field score-med prediction-only" placeholder="中央">
-            <input type="number" class="input-field score-max prediction-only" placeholder="最大">
-            
-            <input type="number" class="input-field max" placeholder="満点" value="100">
-            <input type="color" class="input-field color" value="${colorValue}">
-            <button class="btn btn-delete" onclick="removeRow('${row.id}')">削除</button>
-        `;
-        list.appendChild(row);
-        updateRowNumbers();
-    }
-
-    // createGraph関数を修正
     function createGraph() {
-        const isPrediction = document.getElementById('prediction-checkbox').checked;
+        const isPred = document.getElementById('prediction-checkbox').checked;
         const graphRowsContainer = document.getElementById('graph-rows');
         graphRowsContainer.innerHTML = '';
-        
-        let totalVal = { score: 0, min: 0, med: 0, max: 0, full: 0 };
-        const rows = document.querySelectorAll('.input-row');
+        document.getElementById('display-title').textContent = document.getElementById('exam-title').value || "模試結果";
+
+        let total = { med: 0, min: 0, max: 0, full: 0 };
         let hasData = false;
+        const rows = document.querySelectorAll('.input-row');
 
         rows.forEach(row => {
             const name = row.querySelector('.name').value.trim();
             const max = parseFloat(row.querySelector('.max').value) || 100;
             const color = row.querySelector('.color').value;
             
-            let val = { score: 0, min: 0, med: 0, max: 0 };
+            let val = { med: 0, min: 0, max: 0 };
             let activeScore = 0;
+            let isValid = false;
 
-            if (isPrediction) {
+            if (isPred) {
                 val.min = parseFloat(row.querySelector('.score-min').value) || 0;
                 val.med = parseFloat(row.querySelector('.score-med').value) || 0;
                 val.max = parseFloat(row.querySelector('.score-max').value) || 0;
                 activeScore = val.med;
-                if (row.querySelector('.score-med').value !== "") hasData = true;
+                if (row.querySelector('.score-med').value !== "") isValid = true;
             } else {
-                val.score = parseFloat(row.querySelector('.score').value) || 0;
-                activeScore = val.score;
-                if (row.querySelector('.score').value !== "") hasData = true;
+                activeScore = parseFloat(row.querySelector('.score').value) || 0;
+                val.med = activeScore;
+                if (row.querySelector('.score').value !== "") isValid = true;
             }
 
-            if (hasData) {
-                totalVal.score += val.score;
-                totalVal.min += val.min;
-                totalVal.med += val.med;
-                totalVal.max += val.max;
-                totalVal.full += max;
+            if (isValid) {
+                hasData = true;
+                total.med += val.med;
+                total.min += (isPred ? val.min : activeScore);
+                total.max += (isPred ? val.max : activeScore);
+                total.full += max;
 
-                const per = (v) => Math.min((v / max) * 100, 100);
+                const getPer = (v) => Math.min((v / max) * 100, 100);
                 const rowEl = document.createElement('div');
                 rowEl.className = 'graph-row';
                 
-                let errorBarHtml = '';
-                if (isPrediction) {
-                    const minP = per(val.min);
-                    const maxP = per(val.max);
-                    errorBarHtml = `
-                        <div class="error-bar" style="left: ${minP}%; width: ${maxP - minP}%;">
-                            <div class="error-cap" style="left: 0;"></div>
-                            <div class="error-cap" style="right: 0;"></div>
-                        </div>`;
+                let errorHtml = '';
+                if (isPred) {
+                    const minP = getPer(val.min);
+                    const maxP = getPer(val.max);
+                    errorHtml = `<div class="error-bar" style="left: ${minP}%; width: ${maxP - minP}%;"><div class="error-cap" style="left: 0;"></div><div class="error-cap" style="right: 0;"></div></div>`;
                 }
 
                 rowEl.innerHTML = `
                     <div class="row-labels">
                         <div class="label-color-bar" style="background-color: ${color};"></div>
-                        <div class="label-name">${name || "無題"}</div>
+                        <div class="label-name">${name || "教科"}</div>
                         <div class="label-score-box">
                             <span class="label-score">${activeScore}</span>
                             <span class="label-max">/${max}</span>
                         </div>
                     </div>
-                    <div class="bar-area" style="position: relative;">
-                        ${errorBarHtml}
-                        <div class="bar" style="width: 0%; background-color: ${color}; color: #fff;">${activeScore}</div>
+                    <div class="bar-area">
+                        ${errorHtml}
+                        <div class="bar" style="width: 0%; background-color: ${color};">${activeScore}</div>
                     </div>`;
-                
                 graphRowsContainer.appendChild(rowEl);
-                setTimeout(() => rowEl.querySelector('.bar').style.width = `${per(activeScore)}%`, 100);
+                setTimeout(() => rowEl.querySelector('.bar').style.width = `${getPer(activeScore)}%`, 100);
             }
         });
 
-        // 合計行も同様に処理（totalValを使用して描画）
         if (hasData) {
-            const finalScore = isPrediction ? totalVal.med : totalVal.score;
-            const per = (v) => Math.min((v / totalVal.full) * 100, 100);
+            // 合計行の作成
+            const getTotalPer = (v) => Math.min((v / total.full) * 100, 100);
             
+            const divider = document.createElement('div');
+            divider.className = 'total-divider';
+            graphRowsContainer.appendChild(divider);
+
             const totalRow = document.createElement('div');
             totalRow.className = 'graph-row total-row';
             
             let totalErrorHtml = '';
-            if (isPrediction) {
-                const minP = per(totalVal.min);
-                const maxP = per(totalVal.max);
+            if (isPred) {
+                const minP = getTotalPer(total.min);
+                const maxP = getTotalPer(total.max);
                 totalErrorHtml = `<div class="error-bar" style="left: ${minP}%; width: ${maxP - minP}%;"><div class="error-cap" style="left: 0;"></div><div class="error-cap" style="right: 0;"></div></div>`;
             }
 
@@ -567,22 +417,24 @@
                     <div class="label-color-bar" style="background-color: var(--total-bar-color);"></div>
                     <div class="label-name" style="font-weight: bold;">合計</div>
                     <div class="label-score-box">
-                        <span class="label-score">${finalScore}</span>
-                        <span class="label-max">/${totalVal.full}</span>
+                        <span class="label-score">${total.med}</span>
+                        <span class="label-max">/${total.full}</span>
                     </div>
                 </div>
-                <div class="bar-area" style="position: relative;">
+                <div class="bar-area">
                     ${totalErrorHtml}
-                    <div class="bar" style="width: 0%; background-color: var(--total-bar-color);">${finalScore}</div>
+                    <div class="bar" style="width: 0%; background-color: var(--total-bar-color);">${total.med}</div>
                 </div>`;
             graphRowsContainer.appendChild(totalRow);
-            setTimeout(() => totalRow.querySelector('.bar').style.width = `${per(finalScore)}%`, 150);
+            setTimeout(() => totalRow.querySelector('.bar').style.width = `${getTotalPer(total.med)}%`, 150);
+
             document.getElementById('display').style.display = 'block';
+            window.scrollTo({ top: document.getElementById('display').offsetTop, behavior: 'smooth' });
         }
     }
 
-
-    addRow(); addRow(); addRow();
+    // 初期行
+    for(let i=0; i<3; i++) addRow();
 </script>
 
 </body>
