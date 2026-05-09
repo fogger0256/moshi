@@ -213,6 +213,45 @@
         font-weight: bold;
     }
 
+        /* 合計行の境界線を実線で強調 */
+    .total-row {
+        margin-top: 25px;
+        border-top: 2px solid var(--text-color) !important; /* 点線から実線へ */
+        padding-top: 15px;
+    }
+
+    /* 予想モードスイッチのスタイル */
+    .prediction-switch-wrapper {
+        position: absolute;
+        top: 15px; /* モード切替ボタンの下 */
+        right: 0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.8rem;
+    }
+
+    /* エラーバー（最大・最小の線） */
+    .error-bar {
+        position: absolute;
+        height: 2px;
+        background-color: var(--text-color);
+        z-index: 2;
+    }
+    .error-cap {
+        position: absolute;
+        width: 2px;
+        height: 12px;
+        background-color: var(--text-color);
+        top: -5px;
+    }
+
+    /* 入力欄の表示制御 */
+    .prediction-only { display: none; }
+    body.prediction-mode .prediction-only { display: inline-block; }
+    body.prediction-mode .normal-only { display: none; }
+
+
     /* グラフ全体の開始位置をさらに左へ（B列以降を左寄せ） */
     .graph-container {
         margin-left: 170px; /* 200pxからさらに短縮 */
@@ -237,6 +276,16 @@
         </label>
     </div>
 
+    <!-- 予想モード切替 -->
+    <div class="prediction-switch-wrapper">
+        <span>予想モード</span>
+        <label class="theme-switch">
+            <input type="checkbox" id="prediction-checkbox" onchange="togglePredictionMode(this)">
+            <div class="slider"></div>
+        </label>
+    </div>
+
+    
     <div class="settings-section" id="settings">
         <input type="text" id="exam-title" class="title-input" placeholder="模試タイトルを入力">
         <div class="subject-list" id="subject-list"></div>
@@ -390,6 +439,148 @@
             window.scrollTo({ top: displaySection.offsetTop - 20, behavior: 'smooth' });
         }
     }
+
+        // 予想モードの切り替え
+    function togglePredictionMode(cb) {
+        if (cb.checked) {
+            document.body.classList.add('prediction-mode');
+        } else {
+            document.body.classList.remove('prediction-mode');
+        }
+    }
+
+    // addRow関数を修正：予想用の入力欄を含める
+    function addRow() {
+        rowIdCounter++;
+        const list = document.getElementById('subject-list');
+        const row = document.createElement('div');
+        row.className = 'input-row';
+        row.id = `input-row-${rowIdCounter}`;
+        const colorValue = defaultColors[(rowIdCounter - 1) % defaultColors.length];
+        
+        row.innerHTML = `
+            <span class="row-number">${rowIdCounter}</span>
+            <input type="text" class="input-field name" placeholder="教科名">
+            <!-- 通常時 -->
+            <input type="number" class="input-field score normal-only" placeholder="点数">
+            <!-- 予想時 -->
+            <input type="number" class="input-field score-min prediction-only" placeholder="最小">
+            <input type="number" class="input-field score-med prediction-only" placeholder="中央">
+            <input type="number" class="input-field score-max prediction-only" placeholder="最大">
+            
+            <input type="number" class="input-field max" placeholder="満点" value="100">
+            <input type="color" class="input-field color" value="${colorValue}">
+            <button class="btn btn-delete" onclick="removeRow('${row.id}')">削除</button>
+        `;
+        list.appendChild(row);
+        updateRowNumbers();
+    }
+
+    // createGraph関数を修正
+    function createGraph() {
+        const isPrediction = document.getElementById('prediction-checkbox').checked;
+        const graphRowsContainer = document.getElementById('graph-rows');
+        graphRowsContainer.innerHTML = '';
+        
+        let totalVal = { score: 0, min: 0, med: 0, max: 0, full: 0 };
+        const rows = document.querySelectorAll('.input-row');
+        let hasData = false;
+
+        rows.forEach(row => {
+            const name = row.querySelector('.name').value.trim();
+            const max = parseFloat(row.querySelector('.max').value) || 100;
+            const color = row.querySelector('.color').value;
+            
+            let val = { score: 0, min: 0, med: 0, max: 0 };
+            let activeScore = 0;
+
+            if (isPrediction) {
+                val.min = parseFloat(row.querySelector('.score-min').value) || 0;
+                val.med = parseFloat(row.querySelector('.score-med').value) || 0;
+                val.max = parseFloat(row.querySelector('.score-max').value) || 0;
+                activeScore = val.med;
+                if (row.querySelector('.score-med').value !== "") hasData = true;
+            } else {
+                val.score = parseFloat(row.querySelector('.score').value) || 0;
+                activeScore = val.score;
+                if (row.querySelector('.score').value !== "") hasData = true;
+            }
+
+            if (hasData) {
+                totalVal.score += val.score;
+                totalVal.min += val.min;
+                totalVal.med += val.med;
+                totalVal.max += val.max;
+                totalVal.full += max;
+
+                const per = (v) => Math.min((v / max) * 100, 100);
+                const rowEl = document.createElement('div');
+                rowEl.className = 'graph-row';
+                
+                let errorBarHtml = '';
+                if (isPrediction) {
+                    const minP = per(val.min);
+                    const maxP = per(val.max);
+                    errorBarHtml = `
+                        <div class="error-bar" style="left: ${minP}%; width: ${maxP - minP}%;">
+                            <div class="error-cap" style="left: 0;"></div>
+                            <div class="error-cap" style="right: 0;"></div>
+                        </div>`;
+                }
+
+                rowEl.innerHTML = `
+                    <div class="row-labels">
+                        <div class="label-color-bar" style="background-color: ${color};"></div>
+                        <div class="label-name">${name || "無題"}</div>
+                        <div class="label-score-box">
+                            <span class="label-score">${activeScore}</span>
+                            <span class="label-max">/${max}</span>
+                        </div>
+                    </div>
+                    <div class="bar-area" style="position: relative;">
+                        ${errorBarHtml}
+                        <div class="bar" style="width: 0%; background-color: ${color}; color: #fff;">${activeScore}</div>
+                    </div>`;
+                
+                graphRowsContainer.appendChild(rowEl);
+                setTimeout(() => rowEl.querySelector('.bar').style.width = `${per(activeScore)}%`, 100);
+            }
+        });
+
+        // 合計行も同様に処理（totalValを使用して描画）
+        if (hasData) {
+            const finalScore = isPrediction ? totalVal.med : totalVal.score;
+            const per = (v) => Math.min((v / totalVal.full) * 100, 100);
+            
+            const totalRow = document.createElement('div');
+            totalRow.className = 'graph-row total-row';
+            
+            let totalErrorHtml = '';
+            if (isPrediction) {
+                const minP = per(totalVal.min);
+                const maxP = per(totalVal.max);
+                totalErrorHtml = `<div class="error-bar" style="left: ${minP}%; width: ${maxP - minP}%;"><div class="error-cap" style="left: 0;"></div><div class="error-cap" style="right: 0;"></div></div>`;
+            }
+
+            totalRow.innerHTML = `
+                <div class="row-labels">
+                    <div class="label-color-bar" style="background-color: var(--total-bar-color);"></div>
+                    <div class="label-name" style="font-weight: bold;">合計</div>
+                    <div class="label-score-box">
+                        <span class="label-score">${finalScore}</span>
+                        <span class="label-max">/${totalVal.full}</span>
+                    </div>
+                </div>
+                <div class="bar-area" style="position: relative;">
+                    ${totalErrorHtml}
+                    <div class="bar" style="width: 0%; background-color: var(--total-bar-color);">${finalScore}</div>
+                </div>`;
+            graphRowsContainer.appendChild(totalRow);
+            setTimeout(() => totalRow.querySelector('.bar').style.width = `${per(finalScore)}%`, 150);
+            document.getElementById('display').style.display = 'block';
+        }
+    }
+
 
     addRow(); addRow(); addRow();
 </script>
